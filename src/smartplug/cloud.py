@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from .i18n import _
 from .devices import DeviceInfo, PlugReading, parse_plug, parse_specification
 
 
@@ -23,7 +24,7 @@ def _error_text(resp) -> str:
         for key in ("msg", "Error", "Payload"):
             if resp.get(key):
                 return str(resp[key])
-    return "немає відповіді від Tuya Cloud"
+    return _("no response from Tuya Cloud")
 
 
 class TuyaCloudClient:
@@ -31,24 +32,23 @@ class TuyaCloudClient:
 
     def __init__(self, access_id: str, access_secret: str, region: str = "eu", cloud=None):
         if not access_id or not access_secret:
-            raise CloudError("Не вказано Access ID або Access Secret")
+            raise CloudError(_("Access ID or Access Secret is missing"))
         if cloud is None:
             import tinytuya  # imported lazily: tests and demo mode don't need it
 
             cloud = tinytuya.Cloud(apiRegion=region, apiKey=access_id, apiSecret=access_secret)
         if not getattr(cloud, "token", None):
-            raise CloudError(
-                "Не вдалося авторизуватися в Tuya Cloud: "
-                + _error_text(getattr(cloud, "error", None))
-                + ". Перевір ключі та регіон дата-центру."
-            )
+            raise CloudError(_(
+                "Could not sign in to Tuya Cloud: {err}. Check the keys and the data center.",
+                err=_error_text(getattr(cloud, "error", None)),
+            ))
         self._cloud = cloud
 
     def _request(self, url: str, **kw) -> dict:
         try:
             resp = self._cloud.cloudrequest(url, **kw)
         except Exception as exc:  # network errors from requests etc.
-            raise CloudError(f"Помилка мережі: {exc}") from exc
+            raise CloudError(_("Network error: {err}", err=exc)) from exc
         if not isinstance(resp, dict) or not resp.get("success"):
             raise CloudError(_error_text(resp))
         return resp.get("result")
@@ -57,7 +57,7 @@ class TuyaCloudClient:
         try:
             devices = self._cloud.getdevices(verbose=False)
         except Exception as exc:
-            raise CloudError(f"Помилка мережі: {exc}") from exc
+            raise CloudError(_("Network error: {err}", err=exc)) from exc
         if isinstance(devices, dict):
             raise CloudError(_error_text(devices))
         result = []
@@ -121,5 +121,5 @@ class PlugService:
         if not self.switch_code:
             self.read()
         if not self.switch_code:
-            raise CloudError("Пристрій не має керованого реле (switch_1)")
+            raise CloudError(_("The device has no controllable relay (switch_1)"))
         self.client.set_switch(self.device_id, self.switch_code, value)

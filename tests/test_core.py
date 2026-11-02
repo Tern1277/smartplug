@@ -67,7 +67,7 @@ def test_parse_plug_without_metering():
 
 def test_device_info_label_and_kind():
     d = DeviceInfo("id1", "Кухня", "cz", True)
-    assert d.is_plug and d.kind == "Розетка"
+    assert d.is_plug and d.kind == "Plug"
     assert "online" in d.label()
     assert not DeviceInfo("id2", "Лампа", "dj").is_plug
 
@@ -232,5 +232,5 @@ def test_stats_uptime_and_duration():
     assert stats([]).count == 0
     assert uptime_ratio([R(0), R(1, online=False)]) == 0.5
     assert uptime_ratio([]) is None
-    assert format_duration(3725) == "1 год 2 хв"
-    assert format_duration(65) == "1 хв 5 с"
+    assert format_duration(3725) == "1 h 2 min"
+    assert format_duration(65) == "1 min 5 s"

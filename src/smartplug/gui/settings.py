@@ -13,36 +13,36 @@ from PyQt6.QtWidgets import (
 
 from ..cloud import CloudError, TuyaCloudClient
 from ..config import MIN_POLL_SECONDS, REGIONS, AppConfig
+from ..i18n import _
 
 HELP = (
-    "<b>Де взяти ключі:</b> iot.tuya.com → Cloud → Development → Create Cloud Project "
-    "(Data Center: <i>Central Europe</i>) → Devices → Link App Account → "
-    "відскануй QR у Smart Life (Я → ⚙ → сканер). Access ID та Access Secret — "
-    "на вкладці Overview проєкту.<br>"
-    "Ключі зберігаються лише на цьому ноутбуці у ~/.config/smartplug/config.json (права 600)."
+    "<b>Where to get the keys:</b> iot.tuya.com → Cloud → Development → Create Cloud Project "
+    "(Data Center: <i>Central Europe</i>) → Devices → Link App Account → scan the QR code "
+    "in Smart Life (Me → scanner icon). Access ID and Access Secret are on the project's "
+    "Overview tab.<br>The keys are stored only on this computer in "
+    "~/.config/smartplug/config.json (mode 600)."
 )
 
 
 class SettingsDialog(QDialog):
     def __init__(self, cfg: AppConfig, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Налаштування — SmartPlug")
+        self.setWindowTitle(_("Settings — SmartPlug"))
         self.setMinimumWidth(560)
         self._cfg = cfg
-        self._devices = []
 
-        help_label = QLabel(HELP)
+        help_label = QLabel(_(HELP))
         help_label.setWordWrap(True)
         help_label.setTextFormat(Qt.TextFormat.RichText)
 
         self.access_id = QLineEdit(cfg.access_id)
-        self.access_id.setPlaceholderText("наприклад, 7xk3...")
+        self.access_id.setPlaceholderText(_("e.g. 7xk3..."))
         self.secret = QLineEdit(cfg.access_secret)
         self.secret.setEchoMode(QLineEdit.EchoMode.Password)
         show = QPushButton("👁")
         show.setCheckable(True)
         show.setFixedWidth(36)
-        show.setToolTip("Показати / сховати")
+        show.setToolTip(_("Show / hide"))
         show.toggled.connect(lambda on: self.secret.setEchoMode(
             QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password))
         secret_row = QHBoxLayout()
@@ -51,10 +51,10 @@ class SettingsDialog(QDialog):
 
         self.region = QComboBox()
         for code, name in REGIONS.items():
-            self.region.addItem(f"{name} ({code})", code)
+            self.region.addItem(f"{_(name)} ({code})", code)
         self.region.setCurrentIndex(max(0, self.region.findData(cfg.region)))
 
-        self.find_btn = QPushButton("Підключитись і знайти пристрої")
+        self.find_btn = QPushButton(_("Connect and find devices"))
         self.find_btn.clicked.connect(self._find_devices)
         self.device = QComboBox()
         if cfg.device_id:
@@ -62,33 +62,33 @@ class SettingsDialog(QDialog):
 
         self.poll = QSpinBox()
         self.poll.setRange(MIN_POLL_SECONDS, 3600)
-        self.poll.setSuffix(" с")
+        self.poll.setSuffix(_(" s"))
         self.poll.setValue(cfg.poll_seconds)
-        self.poll.setToolTip("Як часто питати хмару. Частіше = більше запитів до API.")
+        self.poll.setToolTip(_("How often to ask the cloud. More often = more API requests."))
 
         self.nominal = QDoubleSpinBox()
         self.nominal.setRange(100, 260)
-        self.nominal.setSuffix(" В")
+        self.nominal.setSuffix(_(" V"))
         self.nominal.setValue(cfg.nominal_voltage)
         self.tolerance = QDoubleSpinBox()
         self.tolerance.setRange(1, 30)
         self.tolerance.setSuffix(" %")
         self.tolerance.setValue(cfg.tolerance_pct)
 
-        self.confirm = QCheckBox("Питати підтвердження перед перемиканням")
+        self.confirm = QCheckBox(_("Ask for confirmation before switching"))
         self.confirm.setChecked(cfg.confirm_switch)
-        self.notify = QCheckBox("Сповіщення про відключення та стрибки напруги")
+        self.notify = QCheckBox(_("Notify about outages and voltage problems"))
         self.notify.setChecked(cfg.notifications)
 
         form = QFormLayout()
         form.addRow("Access ID:", self.access_id)
         form.addRow("Access Secret:", secret_row)
-        form.addRow("Дата-центр:", self.region)
+        form.addRow(_("Data center:"), self.region)
         form.addRow("", self.find_btn)
-        form.addRow("Пристрій:", self.device)
-        form.addRow("Опитувати кожні:", self.poll)
-        form.addRow("Номінальна напруга:", self.nominal)
-        form.addRow("Допустиме відхилення:", self.tolerance)
+        form.addRow(_("Device:"), self.device)
+        form.addRow(_("Poll every:"), self.poll)
+        form.addRow(_("Nominal voltage:"), self.nominal)
+        form.addRow(_("Allowed deviation:"), self.tolerance)
         form.addRow("", self.confirm)
         form.addRow("", self.notify)
 
@@ -119,20 +119,20 @@ class SettingsDialog(QDialog):
         for d in plugs:
             self.device.addItem(d.label(), (d.id, d.name))
         if not plugs:
-            QMessageBox.information(
-                self, "Tuya Cloud",
-                "Підключення є, але пристроїв не знайдено. Перевір, що акаунт Smart Life "
-                "прив'язаний до проєкту (Devices → Link App Account) і вибрано правильний дата-центр.")
+            QMessageBox.information(self, "Tuya Cloud", _(
+                "Connected, but no devices found. Make sure the Smart Life account is linked to the "
+                "project (Devices → Link App Account) and the right data center is selected."))
             return
         idx = self.device.findData((self._cfg.device_id, self._cfg.device_name))
         self.device.setCurrentIndex(max(0, idx))
 
     def _accept(self) -> None:
         if not self.access_id.text().strip() or not self.secret.text().strip():
-            QMessageBox.warning(self, "SmartPlug", "Вкажи Access ID та Access Secret.")
+            QMessageBox.warning(self, "SmartPlug", _("Enter the Access ID and Access Secret."))
             return
         if self.device.currentData() is None:
-            QMessageBox.warning(self, "SmartPlug", "Натисни «Знайти пристрої» і вибери розетку.")
+            QMessageBox.warning(self, "SmartPlug",
+                                _("Click “Connect and find devices” and choose the plug."))
             return
         self.accept()
 

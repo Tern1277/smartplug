@@ -5,6 +5,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from .cloud import CloudError, PlugService
+from .i18n import _
 
 
 class PlugWorker(QObject):
@@ -30,7 +31,7 @@ class PlugWorker(QObject):
             self.failed.emit(str(exc))
         except Exception as exc:  # keep the worker alive on unexpected errors
             self._service = None
-            self.failed.emit(f"Неочікувана помилка: {exc}")
+            self.failed.emit(_("Unexpected error: {err}", err=exc))
 
     @pyqtSlot(bool)
     def set_on(self, value: bool) -> None:
@@ -39,6 +40,6 @@ class PlugWorker(QObject):
             self.switched.emit(value)
             self.reading.emit(self._get_service().read())
         except CloudError as exc:
-            self.failed.emit(f"Не вдалося перемкнути: {exc}")
+            self.failed.emit(_("Could not switch: {err}", err=exc))
         except Exception as exc:
-            self.failed.emit(f"Не вдалося перемкнути: {exc}")
+            self.failed.emit(_("Could not switch: {err}", err=exc))

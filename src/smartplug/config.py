@@ -7,15 +7,18 @@ import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+from .i18n import LANGUAGES
+
 # Tuya data centers supported by tinytuya (code -> human readable name).
+# Names are English source strings; translate with i18n._() when displaying.
 REGIONS: dict[str, str] = {
-    "eu": "Центральна Європа",
-    "eu-w": "Західна Європа",
-    "us": "Західна Америка",
-    "us-e": "Східна Америка",
-    "in": "Індія",
-    "sg": "Сінгапур",
-    "cn": "Китай",
+    "eu": "Central Europe",
+    "eu-w": "Western Europe",
+    "us": "Western America",
+    "us-e": "Eastern America",
+    "in": "India",
+    "sg": "Singapore",
+    "cn": "China",
 }
 
 MIN_POLL_SECONDS = 10
@@ -47,6 +50,7 @@ class AppConfig:
     tolerance_pct: float = 10.0
     confirm_switch: bool = True
     notifications: bool = True
+    language: str = "en"
 
     @property
     def configured(self) -> bool:
@@ -81,6 +85,8 @@ def load_config(path: Path | None = None) -> AppConfig:
     cfg.poll_seconds = max(MIN_POLL_SECONDS, int(cfg.poll_seconds))
     if cfg.region not in REGIONS:
         cfg.region = "eu"
+    if cfg.language not in LANGUAGES:
+        cfg.language = "en"
     return cfg
 
 
@@ -95,3 +101,10 @@ def save_config(cfg: AppConfig, path: Path | None = None) -> Path:
     os.chmod(tmp, 0o600)
     os.replace(tmp, path)
     return path
+
+
+def save_language(lang: str, path: Path | None = None) -> None:
+    """Remember only the interface language (used by the demo mode too)."""
+    cfg = load_config(path)
+    cfg.language = lang
+    save_config(cfg, path)

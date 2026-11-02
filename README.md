@@ -26,6 +26,7 @@ python -m venv --system-site-packages .venv   # PyQt6 можна взяти з �
 .venv/bin/pip install -e .
 .venv/bin/smartplug --demo     # спробувати без ключів (симульована розетка)
 .venv/bin/smartplug            # справжня розетка
+.venv/bin/smartplug --lang uk  # одноразово запустити українською
 ```
 
 Ярлик у меню програм:
@@ -64,6 +65,7 @@ cp packaging/smartplug.desktop ~/.local/share/applications/
 | `poller.py` | фоновий потік (QThread): мережеві запити не блокують інтерфейс |
 | `gui/` | головне вікно (pyqtgraph), налаштування, трей |
 | `demo.py` | симульована розетка для демо і тестів |
+| `i18n.py` | переклади: вихідні рядки англійською, словник `UK` з українськими; тест перевіряє, що перекладено все |
 
 Запити до API: `GET /v1.0/devices/{id}` (online + статус одним запитом),
 `GET /v1.0/iot-03/devices/{id}/specification` (масштаби), `POST …/commands` (вкл/викл).

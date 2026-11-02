@@ -16,6 +16,8 @@ import json
 import time
 from dataclasses import dataclass, field
 
+from .i18n import _
+
 SWITCH_CODES = ("switch_1", "switch")
 POWER_CODE = "cur_power"
 VOLTAGE_CODE = "cur_voltage"
@@ -32,10 +34,10 @@ DEFAULT_SPEC: dict[str, tuple[int, str]] = {
 
 # Tuya category codes that behave like a plug with a relay.
 PLUG_CATEGORIES = {
-    "cz": "Розетка",
-    "pc": "Подовжувач",
-    "kg": "Вимикач",
-    "tdq": "Автомат",
+    "cz": "Plug",
+    "pc": "Power strip",
+    "kg": "Switch",
+    "tdq": "Breaker",
 }
 
 
@@ -49,14 +51,16 @@ class DeviceInfo:
 
     @property
     def kind(self) -> str:
-        return PLUG_CATEGORIES.get(self.category, self.category or "Пристрій")
+        if self.category in PLUG_CATEGORIES:
+            return _(PLUG_CATEGORIES[self.category])
+        return self.category or _("Device")
 
     @property
     def is_plug(self) -> bool:
         return self.category in PLUG_CATEGORIES
 
     def label(self) -> str:
-        state = "online" if self.online else "offline"
+        state = _("online") if self.online else _("offline")
         return f"{self.name} · {self.kind} · {state}"
 
 

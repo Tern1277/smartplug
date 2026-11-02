@@ -16,20 +16,21 @@ from PyQt6.QtWidgets import (
 )
 
 from ..analysis import (
-    EVENT_TITLES, OFFLINE, EventTracker, format_duration, integrate_energy_kwh, stats,
+    OFFLINE, event_title, EventTracker, format_duration, integrate_energy_kwh, stats,
     uptime_ratio,
 )
-from ..config import AppConfig, save_config
+from ..config import AppConfig, save_config, save_language
+from ..i18n import LANGUAGES, _, get_language, set_language
 from ..devices import PlugReading
 from ..poller import PlugWorker
 from ..storage import Storage
 
 RANGES = [
-    ("1 година", 3600),
-    ("6 годин", 6 * 3600),
-    ("24 години", 86400),
-    ("7 днів", 7 * 86400),
-    ("30 днів", 30 * 86400),
+    ("1 hour", 3600),
+    ("6 hours", 6 * 3600),
+    ("24 hours", 86400),
+    ("7 days", 7 * 86400),
+    ("30 days", 30 * 86400),
 ]
 
 GREEN, RED, GRAY, AMBER = "#2e9d57", "#d64545", "#8a8f98", "#d9962b"
@@ -48,7 +49,8 @@ def dot_icon(color: str) -> QIcon:
 
 
 def fmt(value: float | None, unit: str, digits: int = 1) -> str:
-    return "—" if value is None else f"{value:.{digits}f} {unit}"
+    """Format a measurement; the unit symbol is translated (W -> Вт)."""
+    return "—" if value is None else f"{value:.{digits}f} {_(unit)}"
 
 
 class Card(QFrame):
@@ -95,9 +97,9 @@ class MainWindow(QMainWindow):
         self._really_quit = False
         self._tray_hint_shown = False
 
-        self.setWindowTitle("SmartPlug — монітор розетки" + (" [ДЕМО]" if demo else ""))
         self.resize(1180, 820)
         pg.setConfigOptions(antialias=True)
+        self._range_index = 2
         self._build_ui()
         self._build_tray()
 
@@ -122,34 +124,43 @@ class MainWindow(QMainWindow):
         self.device_label.setFont(f)
         top.addWidget(self.device_label)
         top.addStretch()
-        top.addWidget(QLabel("Період:"))
+        top.addWidget(QLabel(_("Period:")))
         self.range_box = QComboBox()
         for name, secs in RANGES:
-            self.range_box.addItem(name, secs)
-        self.range_box.setCurrentIndex(2)
-        self.range_box.currentIndexChanged.connect(self.refresh_history)
+            self.range_box.addItem(_(name), secs)
+        self.range_box.setCurrentIndex(self._range_index)
+        self.range_box.currentIndexChanged.connect(self._range_changed)
         top.addWidget(self.range_box)
-        self.refresh_btn = QPushButton("⟳ Оновити")
+        self.refresh_btn = QPushButton(_("⟳ Refresh"))
         self.refresh_btn.clicked.connect(self._tick)
         top.addWidget(self.refresh_btn)
-        settings_btn = QPushButton("⚙ Налаштування")
+        top.addWidget(QLabel("🌐"))
+        self.lang_box = QComboBox()
+        self.lang_box.setToolTip(_("Language:"))
+        for code, name in LANGUAGES.items():
+            self.lang_box.addItem(name, code)
+        self.lang_box.setCurrentIndex(max(0, self.lang_box.findData(get_language())))
+        self.lang_box.currentIndexChanged.connect(self._language_changed)
+        top.addWidget(self.lang_box)
+        settings_btn = QPushButton(_("⚙ Settings"))
         settings_btn.clicked.connect(self.open_settings)
         settings_btn.setEnabled(not self.demo)
         top.addWidget(settings_btn)
         root.addLayout(top)
 
         grid = QGridLayout()
-        self.card_grid = Card("Електрика вдома")
-        self.card_relay = Card("Розетка")
+        self.setWindowTitle(_("SmartPlug — smart plug monitor") + (_(" [DEMO]") if self.demo else ""))
+        self.card_grid = Card(_("Power at home"))
+        self.card_relay = Card(_("Plug"))
         self.toggle_btn = QPushButton("—")
         self.toggle_btn.setMinimumHeight(34)
         self.toggle_btn.setEnabled(False)
         self.toggle_btn.clicked.connect(self._toggle)
         self.card_relay.layout().addWidget(self.toggle_btn)
-        self.card_power = Card("Потужність")
-        self.card_voltage = Card("Напруга")
-        self.card_current = Card("Струм")
-        self.card_energy = Card("Енергія за період")
+        self.card_power = Card(_("Power"))
+        self.card_voltage = Card(_("Voltage"))
+        self.card_current = Card(_("Current"))
+        self.card_energy = Card(_("Energy for period"))
         for i, card in enumerate([self.card_grid, self.card_relay, self.card_power,
                                   self.card_voltage, self.card_current, self.card_energy]):
             grid.addWidget(card, 0, i)
@@ -158,7 +169,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.voltage_plot = pg.PlotWidget(axisItems={"bottom": pg.DateAxisItem()})
-        self.voltage_plot.setLabel("left", "Напруга", units="V")
+        self.voltage_plot.setLabel("left", _("Voltage"), units="V")
         self.voltage_plot.showGrid(x=True, y=True, alpha=0.25)
         self.voltage_curve = self.voltage_plot.plot(pen=pg.mkPen("#4e9be6", width=2))
         dash = Qt.PenStyle.DashLine
@@ -169,7 +180,7 @@ class MainWindow(QMainWindow):
             self.voltage_plot.addItem(line)
 
         self.power_plot = pg.PlotWidget(axisItems={"bottom": pg.DateAxisItem()})
-        self.power_plot.setLabel("left", "Потужність", units="W")
+        self.power_plot.setLabel("left", _("Power"), units="W")
         self.power_plot.showGrid(x=True, y=True, alpha=0.25)
         self.power_curve = self.power_plot.plot(
             pen=pg.mkPen(AMBER, width=2), fillLevel=0, brush=pg.mkBrush(217, 150, 43, 60))
@@ -190,7 +201,7 @@ class MainWindow(QMainWindow):
         self.stats_label.setWordWrap(True)
         bl.addWidget(self.stats_label)
         self.events_table = QTableWidget(0, 4)
-        self.events_table.setHorizontalHeaderLabels(["Початок", "Тривалість", "Подія", "Значення"])
+        self.events_table.setHorizontalHeaderLabels([_("Start"), _("Duration"), _("Event"), _("Value")])
         self.events_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.events_table.verticalHeader().setVisible(False)
         self.events_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -207,23 +218,60 @@ class MainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
         self.tray = QSystemTrayIcon(dot_icon(GRAY), self)
-        menu = QMenu()
-        show = QAction("Відкрити", self)
-        show.triggered.connect(self._show_window)
-        quit_ = QAction("Вийти", self)
-        quit_.triggered.connect(self.quit)
-        menu.addAction(show)
-        menu.addSeparator()
-        menu.addAction(quit_)
-        self.tray.setContextMenu(menu)
+        self._build_tray_menu()
         self.tray.activated.connect(
             lambda reason: self._show_window()
             if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
         self.tray.setToolTip("SmartPlug")
         self.tray.show()
 
+    def _build_tray_menu(self) -> None:
+        if not self.tray:
+            return
+        menu = QMenu(self)
+        show = QAction(_("Open"), self)
+        show.triggered.connect(self._show_window)
+        quit_ = QAction(_("Quit"), self)
+        quit_.triggered.connect(self.quit)
+        menu.addAction(show)
+        menu.addSeparator()
+        menu.addAction(quit_)
+        self.tray.setContextMenu(menu)
+        self._tray_menu = menu
+
+    def _range_changed(self, index: int) -> None:
+        self._range_index = index
+        self.refresh_history()
+
+    def _language_changed(self, index: int) -> None:
+        lang = self.lang_box.itemData(index)
+        if lang == get_language():
+            return
+        set_language(lang)
+        self.cfg.language = lang
+        try:
+            if self.demo:
+                save_language(lang, self.config_path)
+            else:
+                save_config(self.cfg, self.config_path)
+        except OSError:
+            pass  # not critical: the choice just won't be remembered
+        # rebuild after this signal returns: the combo box itself is replaced
+        QTimer.singleShot(0, self._retranslate)
+
+    def _retranslate(self) -> None:
+        """Rebuild all widgets with the new language and redraw the data."""
+        self._build_ui()
+        self._build_tray_menu()
+        if self.last is not None:
+            self._show_live(self.last)
+        self.refresh_history()
+
     def _update_device_label(self) -> None:
-        name = self.cfg.device_name or self.cfg.device_id or "Пристрій не вибрано"
+        if self.demo:
+            name = _("Demo plug")
+        else:
+            name = self.cfg.device_name or self.cfg.device_id or _("No device selected")
         self.device_label.setText("🔌 " + name)
         self.nominal_line.setValue(self.cfg.nominal_voltage)
         self.low_line.setValue(self.cfg.voltage_low)
@@ -268,7 +316,7 @@ class MainWindow(QMainWindow):
         if self._worker is None or self._busy:
             return
         self._busy = True
-        self.statusBar().showMessage("Оновлення…")
+        self.statusBar().showMessage(_("Updating…"))
         self.poll_requested.emit()
 
     # ----------------------------------------------------------- results
@@ -280,7 +328,7 @@ class MainWindow(QMainWindow):
         self._show_live(r)
         self.refresh_history()
         stamp = datetime.fromtimestamp(r.ts).strftime("%H:%M:%S")
-        self.statusBar().showMessage(f"Оновлено о {stamp} · наступне через {self.cfg.poll_seconds} с")
+        self.statusBar().showMessage(_("Updated at {t} · next in {s} s", t=stamp, s=self.cfg.poll_seconds))
         if self.tray and self.cfg.notifications:
             for n in notices:
                 icon = (QSystemTrayIcon.MessageIcon.Warning if n.critical
@@ -295,38 +343,38 @@ class MainWindow(QMainWindow):
     def _show_live(self, r: PlugReading) -> None:
         if not r.online:
             since = self._offline_since()
-            sub = f"немає зв'язку {format_duration(time.time() - since)}" if since else ""
-            self.card_grid.set("Offline", sub or "можливо, немає світла", RED)
+            sub = _("no connection for {d}", d=format_duration(time.time() - since)) if since else ""
+            self.card_grid.set(_("Offline"), sub or _("maybe no electricity"), RED)
             self.card_relay.set("—", "")
             for card in (self.card_power, self.card_voltage, self.card_current):
                 card.set("—")
-            self.toggle_btn.setText("Немає зв'язку")
+            self.toggle_btn.setText(_("No connection"))
             self.toggle_btn.setEnabled(False)
-            self._set_tray(RED, "Розетка offline — можливо, немає світла")
+            self._set_tray(RED, _("Plug offline — maybe no electricity"))
             return
 
-        self.card_grid.set("Є ✓", "розетка на зв'язку", GREEN)
+        self.card_grid.set(_("Yes ✓"), _("plug is online"), GREEN)
         if r.is_on is None:
-            self.card_relay.set("—", "реле не знайдено")
+            self.card_relay.set("—", _("relay not found"))
             self.toggle_btn.setEnabled(False)
         else:
-            self.card_relay.set("Увімкнена" if r.is_on else "Вимкнена", "",
+            self.card_relay.set(_("On") if r.is_on else _("Off"), "",
                                 GREEN if r.is_on else GRAY)
-            self.toggle_btn.setText("Вимкнути" if r.is_on else "Увімкнути")
+            self.toggle_btn.setText(_("Turn off") if r.is_on else _("Turn on"))
             self.toggle_btn.setEnabled(True)
 
-        self.card_power.set(fmt(r.power_w, "Вт"))
+        self.card_power.set(fmt(r.power_w, "W"))
         v = r.voltage_v
         v_color = None
         v_sub = ""
         if v is not None and (v < self.cfg.voltage_low or v > self.cfg.voltage_high):
-            v_color, v_sub = RED, "поза нормою"
-        self.card_voltage.set(fmt(v, "В"), v_sub, v_color)
-        self.card_current.set(fmt(r.current_a, "А", 2))
+            v_color, v_sub = RED, _("out of range")
+        self.card_voltage.set(fmt(v, "V"), v_sub, v_color)
+        self.card_current.set(fmt(r.current_a, "A", 2))
         if not r.has_metering:
-            self.card_power.set("—", "розетка без вимірювання")
+            self.card_power.set("—", _("plug without metering"))
 
-        tip = f"Світло є · {fmt(r.power_w, 'Вт')} · {fmt(v, 'В')}"
+        tip = _("Power OK · {p} · {v}", p=fmt(r.power_w, "W"), v=fmt(v, "V"))
         self._set_tray(AMBER if v_color else GREEN, tip)
 
     def _offline_since(self) -> float | None:
@@ -378,7 +426,7 @@ class MainWindow(QMainWindow):
             self._outage_regions.append(region)
 
         energy = integrate_energy_kwh(rows, max_gap=max_gap)
-        self.card_energy.set(f"{energy:.3f} кВт·год", self.range_box.currentText())
+        self.card_energy.set(f"{energy:.3f} {_('kWh')}", self.range_box.currentText())
         self._update_stats(rows, events, span)
         self._fill_events(events, now)
 
@@ -390,14 +438,15 @@ class MainWindow(QMainWindow):
         dips = [e for e in events if e.kind != OFFLINE]
         parts = []
         if v.count:
-            parts.append(f"<b>Напруга:</b> мін {v.min:.0f} В · сер {v.avg:.0f} В · макс {v.max:.0f} В")
+            parts.append(_("<b>Voltage:</b> min {mn:.0f} V · avg {avg:.0f} V · max {mx:.0f} V",
+                           mn=v.min, avg=v.avg, mx=v.max))
         if p.count:
-            parts.append(f"<b>Потужність:</b> сер {p.avg:.0f} Вт · пік {p.max:.0f} Вт")
+            parts.append(_("<b>Power:</b> avg {avg:.0f} W · peak {mx:.0f} W", avg=p.avg, mx=p.max))
         if up is not None:
-            parts.append(f"<b>На зв'язку:</b> {up * 100:.0f}% часу")
-        parts.append(f"<b>Відключень:</b> {len(outages)} · <b>стрибків напруги:</b> {len(dips)}")
+            parts.append(_("<b>Online:</b> {pct:.0f}% of the time", pct=up * 100))
+        parts.append(_("<b>Outages:</b> {o} · <b>voltage events:</b> {d}", o=len(outages), d=len(dips)))
         if not rows:
-            parts = ["Ще немає даних за цей період — історія накопичується, поки програма працює."]
+            parts = [_("No data for this period yet — history builds up while the app is running.")]
         self.stats_label.setText(" &nbsp;|&nbsp; ".join(parts))
 
     def _fill_events(self, events, now) -> None:
@@ -406,9 +455,9 @@ class MainWindow(QMainWindow):
             start = datetime.fromtimestamp(ev.ts_start).strftime("%d.%m %H:%M:%S")
             dur = format_duration((ev.ts_end or now) - ev.ts_start)
             if ev.ts_end is None:
-                dur += " (триває)"
-            value = "" if ev.value is None else f"{ev.value:.0f} В"
-            for col, text in enumerate([start, dur, EVENT_TITLES.get(ev.kind, ev.kind), value]):
+                dur += _(" (ongoing)")
+            value = "" if ev.value is None else f"{ev.value:.0f} {_('V')}"
+            for col, text in enumerate([start, dur, event_title(ev.kind), value]):
                 item = QTableWidgetItem(text)
                 if ev.ts_end is None:
                     item.setForeground(QColor(RED))
@@ -422,14 +471,17 @@ class MainWindow(QMainWindow):
             return
         target = not self.last.is_on
         if self.cfg.confirm_switch:
-            verb = "Увімкнути" if target else "Вимкнути"
-            warn = "" if target else "\n\nВсе, що підключено до розетки, знеструмиться."
-            answer = QMessageBox.question(
-                self, "SmartPlug", f"{verb} розетку «{self.cfg.device_name or 'розетка'}»?{warn}")
+            name = self.cfg.device_name or _("plug")
+            if target:
+                text = _("Turn on the plug “{name}”?", name=name)
+            else:
+                text = _("Turn off the plug “{name}”?", name=name) + _(
+                    "\n\nEverything connected to it will lose power.")
+            answer = QMessageBox.question(self, "SmartPlug", text)
             if answer != QMessageBox.StandardButton.Yes:
                 return
         self.toggle_btn.setEnabled(False)
-        self.statusBar().showMessage("Надсилаю команду…")
+        self.statusBar().showMessage(_("Sending command…"))
         self.switch_requested.emit(target)
 
     def open_settings(self) -> None:
@@ -440,10 +492,11 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self.cfg, self)
         if dlg.exec():
             self.cfg = dlg.result_config()
+            self.cfg.language = get_language()
             save_config(self.cfg, self.config_path)
             self._start()
         elif not self.cfg.configured:
-            self.statusBar().showMessage("Відкрий ⚙ Налаштування і встав ключі з iot.tuya.com")
+            self.statusBar().showMessage(_("Open ⚙ Settings and paste the keys from iot.tuya.com"))
 
     def _show_window(self) -> None:
         self.showNormal()
@@ -461,7 +514,7 @@ class MainWindow(QMainWindow):
             self.hide()
             if not self._tray_hint_shown:
                 self._tray_hint_shown = True
-                self.tray.showMessage("SmartPlug", "Працюю у треї. Вийти: ПКМ на іконці → Вийти.",
+                self.tray.showMessage("SmartPlug", _("Running in the tray. To quit: right-click the icon → Quit."),
                                       QSystemTrayIcon.MessageIcon.Information, 5000)
             return
         self._stop_worker()

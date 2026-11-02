@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 
 from .devices import PlugReading
+from .i18n import _
 from .storage import Storage
 
 OFFLINE = "offline"
@@ -13,10 +14,14 @@ VOLTAGE_LOW = "voltage_low"
 VOLTAGE_HIGH = "voltage_high"
 
 EVENT_TITLES = {
-    OFFLINE: "Розетка offline (можливо, немає світла)",
-    VOLTAGE_LOW: "Просідання напруги",
-    VOLTAGE_HIGH: "Підвищена напруга",
+    OFFLINE: "Plug offline (maybe no electricity)",
+    VOLTAGE_LOW: "Voltage dip",
+    VOLTAGE_HIGH: "Overvoltage",
 }
+
+
+def event_title(kind: str) -> str:
+    return _(EVENT_TITLES[kind]) if kind in EVENT_TITLES else kind
 
 
 @dataclass
@@ -59,8 +64,8 @@ class EventTracker:
             if OFFLINE not in self._open:
                 self._start(OFFLINE, r.ts, None)
                 notices.append(Notice(
-                    "⚠️ Розетка не на зв'язку",
-                    "Можливо, вдома зникло світло або інтернет.",
+                    _("⚠️ Plug is offline"),
+                    _("Electricity or internet at home may be down."),
                     critical=True,
                 ))
             return notices  # no fresh measurements while offline
@@ -68,8 +73,8 @@ class EventTracker:
         ended = self._stop(OFFLINE, r.ts)
         if ended:
             notices.append(Notice(
-                "✅ Розетка знову online",
-                f"Не було зв'язку {format_duration(r.ts - ended.ts_start)}.",
+                _("✅ Plug is back online"),
+                _("It was offline for {d}.", d=format_duration(r.ts - ended.ts_start)),
             ))
 
         v = r.voltage_v
@@ -82,8 +87,8 @@ class EventTracker:
             if ev is None:
                 self._start(VOLTAGE_LOW, r.ts, v)
                 notices.append(Notice(
-                    "⚡ Просідання напруги",
-                    f"{v:.0f} В (норма від {self.low:.0f} В).",
+                    _("⚡ Voltage dip"),
+                    _("{v:.0f} V (normal from {lim:.0f} V).", v=v, lim=self.low),
                     critical=v < self.low - 20,
                 ))
             elif ev.value is None or v < ev.value:
@@ -98,8 +103,8 @@ class EventTracker:
             if ev is None:
                 self._start(VOLTAGE_HIGH, r.ts, v)
                 notices.append(Notice(
-                    "⚡ Підвищена напруга",
-                    f"{v:.0f} В (норма до {self.high:.0f} В).",
+                    _("⚡ Overvoltage"),
+                    _("{v:.0f} V (normal up to {lim:.0f} V).", v=v, lim=self.high),
                     critical=True,
                 ))
             elif ev.value is None or v > ev.value:
@@ -158,7 +163,7 @@ def format_duration(seconds: float) -> str:
     h, rem = divmod(seconds, 3600)
     m, s = divmod(rem, 60)
     if h:
-        return f"{h} год {m} хв"
+        return _("{h} h {m} min", h=h, m=m)
     if m:
-        return f"{m} хв {s} с"
-    return f"{s} с"
+        return _("{m} min {s} s", m=m, s=s)
+    return _("{s} s", s=s)

@@ -29,7 +29,7 @@ class DemoClient:
         self._dip_left = 0
 
     def list_devices(self) -> list[DeviceInfo]:
-        return [DeviceInfo(DEMO_DEVICE_ID, "Демо-розетка", "cz", True, "Smart Plug 16A")]
+        return [DeviceInfo(DEMO_DEVICE_ID, "Demo plug", "cz", True, "Smart Plug 16A")]
 
     def specification(self, device_id: str) -> list[dict]:
         return [

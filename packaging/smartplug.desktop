@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SmartPlug
+GenericName=Монітор розумної розетки
+Comment=Стан, напруга й споживання розетки Smart Life / Tuya
+Exec=smartplug
+Icon=preferences-system-power
+Terminal=false
+Categories=Utility;Monitor;

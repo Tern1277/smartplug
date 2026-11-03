@@ -1,5 +1,6 @@
 import json
 import stat
+import sys
 
 import pytest
 
@@ -77,7 +78,8 @@ def test_config_roundtrip_and_permissions(tmp_path):
     path = tmp_path / "cfg" / "config.json"
     cfg = AppConfig(access_id="id", access_secret="secret", device_id="dev", poll_seconds=30)
     save_config(cfg, path)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if sys.platform != "win32":  # Windows has no POSIX permission bits
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     loaded = load_config(path)
     assert loaded == cfg and loaded.configured
 

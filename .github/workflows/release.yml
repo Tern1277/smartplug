@@ -1,0 +1,57 @@
+name: Windows release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]" pyinstaller
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Build SmartPlug.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name SmartPlug
+          --collect-submodules pyqtgraph
+          packaging/windows_entry.py
+
+      - name: Smoke test (exe starts and stays up in demo mode)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $p = Start-Process dist/SmartPlug.exe -ArgumentList "--demo" -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { throw "SmartPlug.exe exited early with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartPlug-windows
+          path: dist/SmartPlug.exe
+
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/SmartPlug.exe
+          generate_release_notes: true

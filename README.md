@@ -49,7 +49,11 @@ ln -s "$PWD/.venv/bin/smartplug" ~/.local/bin/smartplug
 cp packaging/smartplug.desktop ~/.local/share/applications/
 ```
 
-**Windows** (should work, but not tested yet)
+**Windows**: download `SmartPlug.exe` from [Releases](https://github.com/Tern1277/smartplug/releases/latest)
+and run it. Python is not needed. The file is not code-signed, so Windows SmartScreen may warn you:
+click *More info → Run anyway*.
+
+Or run it from source:
 
 ```powershell
 git clone https://github.com/Tern1277/smartplug.git; cd smartplug
@@ -111,7 +115,6 @@ The app uses these API calls:
 - [ ] Notifications via a Telegram bot
 - [ ] CSV export of the history
 - [ ] Autostart via a systemd user service
-- [ ] Windows build (`.exe`)
 
 ## License
 

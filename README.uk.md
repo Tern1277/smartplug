@@ -36,7 +36,11 @@ python -m venv --system-site-packages .venv   # PyQt6 можна взяти з �
 .venv/bin/smartplug --lang uk  # одноразово запустити українською
 ```
 
-Ярлик у меню програм:
+**Windows**: завантаж `SmartPlug.exe` з [Releases](https://github.com/Tern1277/smartplug/releases/latest)
+і запусти, Python не потрібен. Файл не підписаний, тому Windows SmartScreen може попередити:
+*Докладніше → Усе одно запустити*.
+
+Ярлик у меню програм (Linux):
 
 ```bash
 ln -s "$PWD/.venv/bin/smartplug" ~/.local/bin/smartplug

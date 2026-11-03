@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..cloud import CloudError, TuyaCloudClient
-from ..config import MIN_POLL_SECONDS, REGIONS, AppConfig
+from ..config import MAX_CYCLE_SECONDS, MIN_CYCLE_SECONDS, MIN_POLL_SECONDS, REGIONS, AppConfig
 from ..i18n import _
 
 HELP = (
@@ -75,6 +75,13 @@ class SettingsDialog(QDialog):
         self.tolerance.setSuffix(" %")
         self.tolerance.setValue(cfg.tolerance_pct)
 
+        self.cycle = QSpinBox()
+        self.cycle.setRange(MIN_CYCLE_SECONDS, MAX_CYCLE_SECONDS)
+        self.cycle.setSuffix(_(" s"))
+        self.cycle.setValue(cfg.power_cycle_seconds)
+        self.cycle.setToolTip(_("How long the plug stays off during “Power cycle”. "
+                                "A PC usually needs 15–30 s to fully lose power."))
+
         self.confirm = QCheckBox(_("Ask for confirmation before switching"))
         self.confirm.setChecked(cfg.confirm_switch)
         self.notify = QCheckBox(_("Notify about outages and voltage problems"))
@@ -89,6 +96,7 @@ class SettingsDialog(QDialog):
         form.addRow(_("Poll every:"), self.poll)
         form.addRow(_("Nominal voltage:"), self.nominal)
         form.addRow(_("Allowed deviation:"), self.tolerance)
+        form.addRow(_("Power cycle off time:"), self.cycle)
         form.addRow("", self.confirm)
         form.addRow("", self.notify)
 
@@ -148,6 +156,7 @@ class SettingsDialog(QDialog):
             poll_seconds=self.poll.value(),
             nominal_voltage=self.nominal.value(),
             tolerance_pct=self.tolerance.value(),
+            power_cycle_seconds=self.cycle.value(),
             confirm_switch=self.confirm.isChecked(),
             notifications=self.notify.isChecked(),
         )

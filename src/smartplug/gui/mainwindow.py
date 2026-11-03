@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-    QMessageBox, QPushButton, QSplitter, QSystemTrayIcon, QMenu, QTableWidget,
+    QMessageBox, QPushButton, QSpinBox, QSplitter, QSystemTrayIcon, QMenu, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget, QApplication,
 )
 
@@ -19,7 +19,9 @@ from ..analysis import (
     OFFLINE, event_title, EventTracker, format_duration, integrate_energy_kwh, stats,
     uptime_ratio,
 )
-from ..config import AppConfig, save_config, save_language
+from ..config import (
+    MAX_CYCLE_SECONDS, MIN_CYCLE_SECONDS, AppConfig, save_config, save_language,
+)
 from ..i18n import LANGUAGES, _, get_language, set_language
 from ..devices import PlugReading
 from ..poller import PlugWorker
@@ -80,6 +82,7 @@ class Card(QFrame):
 class MainWindow(QMainWindow):
     poll_requested = pyqtSignal()
     switch_requested = pyqtSignal(bool)
+    cycle_requested = pyqtSignal(int)
 
     def __init__(self, cfg: AppConfig, storage: Storage, service_factory, demo: bool = False,
                  config_path=None):
@@ -94,6 +97,7 @@ class MainWindow(QMainWindow):
         self._thread: QThread | None = None
         self._worker: PlugWorker | None = None
         self._busy = False
+        self._cycling = False
         self._really_quit = False
         self._tray_hint_shown = False
 
@@ -157,6 +161,24 @@ class MainWindow(QMainWindow):
         self.toggle_btn.setEnabled(False)
         self.toggle_btn.clicked.connect(self._toggle)
         self.card_relay.layout().addWidget(self.toggle_btn)
+        self.cycle_btn = QPushButton(_("⟲ Power cycle"))
+        self.cycle_btn.setToolTip(_(
+            "Turn the plug off for the chosen time and turn it on again — e.g. so a PC "
+            "fully loses power and starts by itself."))
+        self.cycle_btn.setEnabled(False)
+        self.cycle_btn.clicked.connect(self._power_cycle)
+        self.cycle_secs = QSpinBox()
+        self.cycle_secs.setRange(MIN_CYCLE_SECONDS, MAX_CYCLE_SECONDS)
+        self.cycle_secs.setSuffix(_(" s"))
+        self.cycle_secs.setValue(self.cfg.power_cycle_seconds)
+        self.cycle_secs.setToolTip(_("How long the plug stays off during “Power cycle”. "
+                                     "A PC usually needs 15–30 s to fully lose power."))
+        self.cycle_secs.setEnabled(not self._cycling)
+        self.cycle_secs.valueChanged.connect(self._cycle_seconds_changed)
+        cycle_row = QHBoxLayout()
+        cycle_row.addWidget(self.cycle_btn, 1)
+        cycle_row.addWidget(self.cycle_secs)
+        self.card_relay.layout().addLayout(cycle_row)
         self.card_power = Card(_("Power"))
         self.card_voltage = Card(_("Voltage"))
         self.card_current = Card(_("Current"))
@@ -290,6 +312,9 @@ class MainWindow(QMainWindow):
         self._worker.moveToThread(self._thread)
         self.poll_requested.connect(self._worker.poll)
         self.switch_requested.connect(self._worker.set_on)
+        self.cycle_requested.connect(self._worker.power_cycle)
+        self._worker.progress.connect(self._on_cycle_progress)
+        self._worker.cycled.connect(self._on_cycled)
         self._worker.reading.connect(self._on_reading)
         self._worker.failed.connect(self._on_error)
         self._thread.start()
@@ -305,6 +330,7 @@ class MainWindow(QMainWindow):
             try:
                 self.poll_requested.disconnect()
                 self.switch_requested.disconnect()
+                self.cycle_requested.disconnect()
             except TypeError:
                 pass
             self._thread.quit()
@@ -328,7 +354,9 @@ class MainWindow(QMainWindow):
         self._show_live(r)
         self.refresh_history()
         stamp = datetime.fromtimestamp(r.ts).strftime("%H:%M:%S")
-        self.statusBar().showMessage(_("Updated at {t} · next in {s} s", t=stamp, s=self.cfg.poll_seconds))
+        if not self._cycling:
+            self.statusBar().showMessage(
+                _("Updated at {t} · next in {s} s", t=stamp, s=self.cfg.poll_seconds))
         if self.tray and self.cfg.notifications:
             for n in notices:
                 icon = (QSystemTrayIcon.MessageIcon.Warning if n.critical
@@ -338,7 +366,7 @@ class MainWindow(QMainWindow):
     def _on_error(self, message: str) -> None:
         self._busy = False
         self.statusBar().showMessage("⚠ " + message)
-        self.toggle_btn.setEnabled(bool(self.last and self.last.online))
+        self.toggle_btn.setEnabled(bool(self.last and self.last.online) and not self._cycling)
 
     def _show_live(self, r: PlugReading) -> None:
         if not r.online:
@@ -350,6 +378,7 @@ class MainWindow(QMainWindow):
                 card.set("—")
             self.toggle_btn.setText(_("No connection"))
             self.toggle_btn.setEnabled(False)
+            self.cycle_btn.setEnabled(False)
             self._set_tray(RED, _("Plug offline — maybe no electricity"))
             return
 
@@ -357,11 +386,13 @@ class MainWindow(QMainWindow):
         if r.is_on is None:
             self.card_relay.set("—", _("relay not found"))
             self.toggle_btn.setEnabled(False)
+            self.cycle_btn.setEnabled(False)
         else:
             self.card_relay.set(_("On") if r.is_on else _("Off"), "",
                                 GREEN if r.is_on else GRAY)
             self.toggle_btn.setText(_("Turn off") if r.is_on else _("Turn on"))
-            self.toggle_btn.setEnabled(True)
+            self.toggle_btn.setEnabled(not self._cycling)
+            self.cycle_btn.setEnabled(bool(r.is_on) and not self._cycling)
 
         self.card_power.set(fmt(r.power_w, "W"))
         v = r.voltage_v
@@ -484,16 +515,64 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(_("Sending command…"))
         self.switch_requested.emit(target)
 
+    def _power_cycle(self) -> None:
+        if (not self.last or not self.last.online or not self.last.is_on
+                or self._worker is None or self._cycling):
+            return
+        name = self.cfg.device_name or _("plug")
+        seconds = self.cycle_secs.value()
+        answer = QMessageBox.question(self, "SmartPlug", _(
+            "Power-cycle the plug “{name}”?\n\nIt will be turned off for {s} s and then "
+            "turned on again. Everything connected to it will lose power.", name=name, s=seconds))
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._cycling = True
+        self.toggle_btn.setEnabled(False)
+        self.cycle_btn.setEnabled(False)
+        self.cycle_secs.setEnabled(False)
+        self.statusBar().showMessage(_("Sending command…"))
+        self.cycle_requested.emit(seconds)
+
+    def _cycle_seconds_changed(self, value: int) -> None:
+        self.cfg.power_cycle_seconds = value
+        if self.demo:
+            return
+        try:
+            save_config(self.cfg, self.config_path)
+        except OSError:
+            pass  # not critical: the value just won't be remembered
+
+    def _on_cycle_progress(self, text: str) -> None:
+        self.statusBar().showMessage(text)
+
+    def _on_cycled(self, ok: bool) -> None:
+        self._cycling = False
+        self.cycle_secs.setEnabled(True)
+        if self.last:
+            self._show_live(self.last)
+        if ok:
+            self.statusBar().showMessage(_("Power cycle done — the plug is on again"))
+            if self.tray and self.cfg.notifications:
+                self.tray.showMessage("SmartPlug", _("Power cycle done — the plug is on again"),
+                                      QSystemTrayIcon.MessageIcon.Information, 5000)
+        elif self.tray and self.cfg.notifications:
+            self.tray.showMessage("SmartPlug", self.statusBar().currentMessage(),
+                                  QSystemTrayIcon.MessageIcon.Warning, 10000)
+
     def open_settings(self) -> None:
         if self.demo:
             return
         from .settings import SettingsDialog
 
+        if self._cycling:
+            self.statusBar().showMessage(_("Wait until the power cycle finishes"))
+            return
         dlg = SettingsDialog(self.cfg, self)
         if dlg.exec():
             self.cfg = dlg.result_config()
             self.cfg.language = get_language()
             save_config(self.cfg, self.config_path)
+            self.cycle_secs.setValue(self.cfg.power_cycle_seconds)
             self._start()
         elif not self.cfg.configured:
             self.statusBar().showMessage(_("Open ⚙ Settings and paste the keys from iot.tuya.com"))
@@ -504,6 +583,11 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def quit(self) -> None:
+        if self._cycling:
+            answer = QMessageBox.question(self, "SmartPlug", _(
+                "A power cycle is in progress. If you quit now, the plug may stay OFF.\n\nQuit anyway?"))
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         self._really_quit = True
         self.close()
 

@@ -267,3 +267,50 @@ def test_worker_set_on_waits_for_cloud_status():
     worker.reading.connect(got.append)
     worker.set_on(False)
     assert got and got[-1].is_on is False
+
+
+def test_worker_power_cycle_turns_off_waits_and_turns_on():
+    from smartplug.poller import PlugWorker
+
+    demo = DemoClient(seed=4, outage_every=0)
+    commands, sleeps = [], []
+    orig = demo.set_switch
+    demo.set_switch = lambda d, c, v: (commands.append(v), orig(d, c, v))
+    worker = PlugWorker(lambda: PlugService(demo, DEMO_DEVICE_ID), sleep=sleeps.append)
+    done, progress = [], []
+    worker.cycled.connect(done.append)
+    worker.progress.connect(progress.append)
+    worker.power_cycle(7)
+    assert commands == [False, True]
+    assert done == [True]
+    assert sleeps.count(1) >= 7  # the off-time countdown
+    assert any("7" in p for p in progress)
+
+
+def test_worker_power_cycle_reports_when_plug_stays_off():
+    from smartplug.poller import PlugWorker
+
+    demo = DemoClient(seed=5, outage_every=0)
+    orig = demo.set_switch
+
+    def flaky(d, c, v):
+        if v:
+            raise CloudError("timeout")
+        orig(d, c, v)
+
+    demo.set_switch = flaky
+    worker = PlugWorker(lambda: PlugService(demo, DEMO_DEVICE_ID), sleep=lambda s: None)
+    done, errors = [], []
+    worker.cycled.connect(done.append)
+    worker.failed.connect(errors.append)
+    worker.power_cycle(5)
+    assert done == [False]
+    assert errors and "OFF" in errors[-1]
+
+
+def test_config_clamps_power_cycle_seconds(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"power_cycle_seconds": 1}))
+    assert load_config(path).power_cycle_seconds == 5
+    path.write_text(json.dumps({"power_cycle_seconds": "x"}))
+    assert load_config(path).power_cycle_seconds == 30

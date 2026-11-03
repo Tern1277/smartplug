@@ -162,6 +162,30 @@ UK: dict[str, str] = {
     "India": "Індія",
     "Singapore": "Сінгапур",
     "China": "Китай",
+    # power cycle
+    "⟲ Power cycle": "⟲ Перезапуск живлення",
+    "Turn the plug off for the chosen time and turn it on again — e.g. so a PC fully loses power and starts by itself.":
+        "Вимкнути розетку на вибраний час і ввімкнути знову — наприклад, щоб ПК повністю "
+        "знеструмився і сам увімкнувся.",
+    "Power-cycle the plug “{name}”?\n\nIt will be turned off for {s} s and then turned on again. Everything connected to it will lose power.":
+        "Перезапустити живлення розетки «{name}»?\n\nВона вимкнеться на {s} с, а потім "
+        "увімкнеться знову. Усе, що до неї підключено, знеструмиться.",
+    "Power cycle: turning off…": "Перезапуск: вимикаю…",
+    "Power cycle: off, turning on in {s} s": "Перезапуск: вимкнено, увімкну через {s} с",
+    "Power cycle: turning on…": "Перезапуск: вмикаю…",
+    "Power cycle done — the plug is on again": "Перезапуск завершено — розетка знову увімкнена",
+    "Power cycle: could not turn the plug back on ({err}). It may still be OFF — turn it on manually.":
+        "Перезапуск: не вдалося знову ввімкнути розетку ({err}). Можливо, вона досі "
+        "ВИМКНЕНА — увімкніть вручну.",
+    "state not confirmed": "стан не підтверджено",
+    "Wait until the power cycle finishes": "Зачекайте, поки завершиться перезапуск живлення",
+    "A power cycle is in progress. If you quit now, the plug may stay OFF.\n\nQuit anyway?":
+        "Триває перезапуск живлення. Якщо вийти зараз, розетка може лишитися ВИМКНЕНОЮ.\n\n"
+        "Все одно вийти?",
+    "Power cycle off time:": "Пауза при перезапуску:",
+    "How long the plug stays off during “Power cycle”. A PC usually needs 15–30 s to fully lose power.":
+        "Скільки розетка буде вимкнена під час перезапуску. ПК зазвичай потрібно 15–30 с, "
+        "щоб повністю знеструмитися.",
     # cli
     "Monitor and control a Tuya / Smart Life smart plug":
         "Монітор і керування розумною розеткою Tuya / Smart Life",

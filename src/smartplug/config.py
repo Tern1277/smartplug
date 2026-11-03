@@ -22,6 +22,8 @@ REGIONS: dict[str, str] = {
 }
 
 MIN_POLL_SECONDS = 10
+MIN_CYCLE_SECONDS = 5
+MAX_CYCLE_SECONDS = 300
 
 
 def config_dir() -> Path:
@@ -49,6 +51,7 @@ class AppConfig:
     nominal_voltage: float = 230.0
     tolerance_pct: float = 10.0
     confirm_switch: bool = True
+    power_cycle_seconds: int = 30
     notifications: bool = True
     language: str = "en"
 
@@ -83,6 +86,11 @@ def load_config(path: Path | None = None) -> AppConfig:
     known = {f.name for f in fields(AppConfig)}
     cfg = AppConfig(**{k: v for k, v in raw.items() if k in known})
     cfg.poll_seconds = max(MIN_POLL_SECONDS, int(cfg.poll_seconds))
+    try:
+        cycle = int(cfg.power_cycle_seconds)
+    except (TypeError, ValueError):
+        cycle = AppConfig.power_cycle_seconds
+    cfg.power_cycle_seconds = min(MAX_CYCLE_SECONDS, max(MIN_CYCLE_SECONDS, cycle))
     if cfg.region not in REGIONS:
         cfg.region = "eu"
     if cfg.language not in LANGUAGES:

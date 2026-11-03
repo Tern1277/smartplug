@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from .cloud import CloudError, PlugService
@@ -13,9 +15,15 @@ class PlugWorker(QObject):
     switched = pyqtSignal(bool)       # new requested state
     failed = pyqtSignal(str)
 
-    def __init__(self, service_factory):
+    # Tuya Cloud updates the device status a moment after the command is accepted,
+    # so an immediate read still shows the old state. Re-read until it matches.
+    CONFIRM_ATTEMPTS = 6
+    CONFIRM_DELAY = 1.0
+
+    def __init__(self, service_factory, sleep=time.sleep):
         super().__init__()
         self._factory = service_factory
+        self._sleep = sleep
         self._service: PlugService | None = None
 
     def _get_service(self) -> PlugService:
@@ -36,9 +44,16 @@ class PlugWorker(QObject):
     @pyqtSlot(bool)
     def set_on(self, value: bool) -> None:
         try:
-            self._get_service().set_on(value)
+            service = self._get_service()
+            service.set_on(value)
             self.switched.emit(value)
-            self.reading.emit(self._get_service().read())
+            reading = None
+            for _attempt in range(self.CONFIRM_ATTEMPTS):
+                self._sleep(self.CONFIRM_DELAY)
+                reading = service.read()
+                if reading.is_on == value or not reading.online:
+                    break
+            self.reading.emit(reading)
         except CloudError as exc:
             self.failed.emit(_("Could not switch: {err}", err=exc))
         except Exception as exc:

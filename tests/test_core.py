@@ -234,3 +234,36 @@ def test_stats_uptime_and_duration():
     assert uptime_ratio([]) is None
     assert format_duration(3725) == "1 h 2 min"
     assert format_duration(65) == "1 min 5 s"
+
+
+# worker: switching waits until the cloud reports the new state ---------------
+def test_worker_set_on_waits_for_cloud_status():
+    from smartplug.poller import PlugWorker
+
+    class LaggyClient(DemoClient):
+        """Reports the new relay state only after two more reads, like Tuya Cloud."""
+        def __init__(self):
+            super().__init__(seed=3, outage_every=0)
+            self.lag = 0
+            self.reported_on = True
+
+        def set_switch(self, device_id, code, value):
+            super().set_switch(device_id, code, value)
+            self.lag = 2
+
+        def read(self, device_id):
+            online, status = super().read(device_id)
+            if self.lag:
+                self.lag -= 1
+                status = [dict(s, value=self.reported_on) if s["code"] == "switch_1" else s
+                          for s in status]
+            else:
+                self.reported_on = next(s["value"] for s in status if s["code"] == "switch_1")
+            return online, status
+
+    client = LaggyClient()
+    worker = PlugWorker(lambda: PlugService(client, DEMO_DEVICE_ID), sleep=lambda s: None)
+    got = []
+    worker.reading.connect(got.append)
+    worker.set_on(False)
+    assert got and got[-1].is_on is False
